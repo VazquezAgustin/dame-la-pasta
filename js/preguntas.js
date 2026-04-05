@@ -16,6 +16,12 @@ export const CATEGORY_POOL = [
   "De Aquí y de Allá",
   "En Boca de Todos",
   "Números que Hablan",
+  "El Asado",
+  "Historia de España",
+  "Historia Argentina",
+  "La Roja y la Albiceleste",
+  "Letras Hispanas",
+  "El Mundo del Deporte",
 ];
 
 export function pickRandomCategories(pool, count = 6) {
@@ -123,5 +129,53 @@ export const QUESTIONS = {
     { value: 600,  question: "¿Cuántos metros mide una piscina olímpica?", answer: "50 metros" },
     { value: 800,  question: "¿Cuántos Grand Slams ganó Rafael Nadal en su carrera?", answer: "22" },
     { value: 1000, question: "¿Cuántos puntos vale un try en el rugby?", answer: "5 puntos" },
+  ],
+
+  "El Asado": [
+    { value: 200,  question: "¿Cómo se llama la salsa verde con perejil y ajo que acompaña al asado argentino?", answer: "Chimichurri" },
+    { value: 400,  question: "¿De qué región española es originaria la paella?", answer: "Valencia" },
+    { value: 600,  question: "¿Cuál es el ingrediente base del dulce de leche?", answer: "Leche y azúcar" },
+    { value: 800,  question: "¿Cómo se llama el embutido español curado hecho con la pata trasera del cerdo?", answer: "Jamón serrano / jamón ibérico (aceptar jamón)" },
+    { value: 1000, question: "¿Cuál es el nombre del queso más famoso de La Mancha, con denominación de origen propia?", answer: "Queso manchego" },
+  ],
+
+  "Historia de España": [
+    { value: 200,  question: "¿En qué año terminó la Guerra Civil Española?", answer: "1939" },
+    { value: 400,  question: "¿Quién fue el dictador que gobernó España desde 1939 hasta su muerte?", answer: "Francisco Franco" },
+    { value: 600,  question: "¿Cómo se llamaba el rey que reinó en España durante la Transición democrática?", answer: "Juan Carlos I" },
+    { value: 800,  question: "¿En qué año se aprobó la Constitución española actual?", answer: "1978" },
+    { value: 1000, question: "¿Cómo se llama el primer presidente del gobierno de la democracia española, elegido en 1977?", answer: "Adolfo Suárez" },
+  ],
+
+  "Historia Argentina": [
+    { value: 200,  question: "¿En qué año declaró Argentina su independencia?", answer: "1816" },
+    { value: 400,  question: "¿Cómo se llamó la guerra entre Argentina y el Reino Unido en 1982?", answer: "Guerra de las Malvinas" },
+    { value: 600,  question: "¿En qué año comenzó la última dictadura militar argentina?", answer: "1976" },
+    { value: 800,  question: "¿En qué año se produjo la crisis económica argentina conocida como 'el corralito'?", answer: "2001" },
+    { value: 1000, question: "¿Cómo se llama la plaza principal de Buenos Aires, frente a la Casa Rosada?", answer: "Plaza de Mayo" },
+  ],
+
+  "La Roja y la Albiceleste": [
+    { value: 200,  question: "¿Cuántos Mundiales de fútbol ha ganado España?", answer: "1 (Sudáfrica 2010)" },
+    { value: 400,  question: "¿Cuántos Mundiales de fútbol ha ganado Argentina?", answer: "3 (1978, 1986 y 2022)" },
+    { value: 600,  question: "¿Quién fue el máximo goleador de España en el Mundial de Sudáfrica 2010?", answer: "David Villa" },
+    { value: 800,  question: "¿Qué jugador argentino fue elegido mejor jugador del Mundial de Qatar 2022?", answer: "Lionel Messi" },
+    { value: 1000, question: "¿Cuántas Eurocopas ha ganado la selección española?", answer: "3 (1964, 2008 y 2012)" },
+  ],
+
+  "Letras Hispanas": [
+    { value: 200,  question: "¿Quién escribió 'Don Quijote de la Mancha'?", answer: "Miguel de Cervantes" },
+    { value: 400,  question: "¿De qué país era el escritor Jorge Luis Borges?", answer: "Argentina" },
+    { value: 600,  question: "¿Cómo se llama la novela más famosa de Gabriel García Márquez?", answer: "Cien años de soledad" },
+    { value: 800,  question: "¿De qué región española era Federico García Lorca?", answer: "Andalucía (nació en Granada)" },
+    { value: 1000, question: "¿Cómo se llama la novela de Julio Cortázar que alterna entre París y Buenos Aires?", answer: "Rayuela" },
+  ],
+
+  "El Mundo del Deporte": [
+    { value: 200,  question: "¿En qué deporte compite Rafael Nadal?", answer: "Tenis" },
+    { value: 400,  question: "¿Cuántos Grand Slams ganó Rafael Nadal a lo largo de su carrera?", answer: "22" },
+    { value: 600,  question: "¿En qué deporte se convirtió en leyenda el argentino Juan Manuel Fangio?", answer: "Fórmula 1 (automovilismo)" },
+    { value: 800,  question: "¿Cuántos campeonatos mundiales de Fórmula 1 ganó Juan Manuel Fangio?", answer: "5" },
+    { value: 1000, question: "¿En qué año ganó Argentina el oro olímpico en básquetbol con la llamada 'Generación Dorada'?", answer: "2004 (Atenas)" },
   ],
 };
