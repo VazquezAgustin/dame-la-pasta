@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import {
-  getDatabase, ref, set, get, update, onValue, runTransaction
+  getDatabase, ref, set, get, update, onValue, runTransaction, serverTimestamp, onDisconnect
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 import { firebaseConfig } from "./firebase.config.js";
 
@@ -30,6 +30,8 @@ export const GameDAO = {
   lightningBeginQuestion:async () => {},
   lightningJudge:        async () => {},
   lightningAdvance:      async () => {},
+  setupPresence:         async () => {},
+  migrateHost:           async () => {},
   subscribe:             () => () => {},
 };
 
@@ -63,7 +65,7 @@ if (firebaseConfigurado) {
 
   GameDAO.selectQuestion = async (roomCode, category, value) => {
     await update(rRef(roomCode), {
-      currentQuestion: { category, value, openedAt: Date.now() },
+      currentQuestion: { category, value, openedAt: serverTimestamp() },
       buzzer: null,
       questionPhase: "waiting_buzz",
       questionResult: null,
@@ -78,7 +80,13 @@ if (firebaseConfigurado) {
       return { playerId, timestamp: Date.now() };
     });
     if (won) {
-      await update(rRef(roomCode), { questionPhase: "waiting_answer" });
+      try {
+        await update(rRef(roomCode), { questionPhase: "waiting_answer" });
+      } catch (e) {
+        // La fase no se actualizó — revertir el buzzer para no dejar el juego trabado
+        try { await set(ref(db, `rooms/${roomCode}/buzzer`), null); } catch (_) {}
+        throw e;
+      }
     }
     return won;
   };
@@ -87,16 +95,12 @@ if (firebaseConfigurado) {
     await update(rRef(roomCode), { questionPhase: "answer_revealed" });
   };
 
-  GameDAO.judgeAnswer = async (roomCode, responderId, correct, pointsDelta) => {
-    const [scoreSnap, qSnap] = await Promise.all([
-      get(ref(db, `rooms/${roomCode}/players/${responderId}/score`)),
-      get(ref(db, `rooms/${roomCode}/currentQuestion`)),
-    ]);
+  GameDAO.judgeAnswer = async (roomCode, responderId, correct, pointsDelta, category, value) => {
+    const scoreSnap = await get(ref(db, `rooms/${roomCode}/players/${responderId}/score`));
     const currentScore = scoreSnap.val() || 0;
-    const q = qSnap.val();
     await update(rRef(roomCode), {
       [`players/${responderId}/score`]: currentScore + pointsDelta,
-      [`board/${q.category}/${q.value}`]: true,
+      [`board/${category}/${value}`]: true,
       questionResult: { responderId, correct, pointsDelta },
       questionPhase: "judged",
     });
@@ -155,8 +159,24 @@ if (firebaseConfigurado) {
   GameDAO.lightningBeginQuestion = async (roomCode) => {
     await update(rRef(roomCode), {
       "lightningMode/phase": "question",
-      "lightningMode/openedAt": Date.now(),
+      "lightningMode/openedAt": serverTimestamp(),
       "lightningMode/questionResult": null,
+    });
+  };
+
+  // Registra presencia del jugador: marca connected=false automáticamente al desconectarse.
+  GameDAO.setupPresence = async (roomCode, playerId) => {
+    const presenceRef = ref(db, `rooms/${roomCode}/players/${playerId}/connected`);
+    await onDisconnect(presenceRef).set(false);
+    await set(presenceRef, true);
+  };
+
+  // Migra el host a otro jugador usando transacción para evitar condición de carrera.
+  // Solo tiene efecto si el hostId actual sigue siendo currentHostId.
+  GameDAO.migrateHost = async (roomCode, currentHostId, newHostId) => {
+    await runTransaction(ref(db, `rooms/${roomCode}/hostId`), (hostId) => {
+      if (hostId !== currentHostId) return; // ya fue migrado por otro cliente
+      return newHostId;
     });
   };
 
@@ -181,7 +201,7 @@ if (firebaseConfigurado) {
       await update(rRef(roomCode), {
         "lightningMode/currentSlot": nextSlot,
         "lightningMode/phase": "question",
-        "lightningMode/openedAt": Date.now(),
+        "lightningMode/openedAt": serverTimestamp(),
         "lightningMode/questionResult": null,
       });
     }

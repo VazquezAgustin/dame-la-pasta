@@ -10,14 +10,17 @@ if (!myPlayerId) {
   sessionStorage.setItem("playerId", myPlayerId);
 }
 
-let myName            = "";
-let roomCode          = "";
-let state             = null;
-let isHost            = false;
-let unsubscribe       = null;
-let timerInterval     = null;
-let skipTimeout       = null;
-let lightningTriggered = false;
+let myName              = "";
+let roomCode            = "";
+let state               = null;
+let isHost              = false;
+let unsubscribe         = null;
+let timerInterval       = null;
+let skipTimeout         = null;
+let lightningTriggered  = false;
+let _hostMigrating      = false;  // guard para no lanzar migración múltiple
+let _lastBoardKey       = null;   // dirty-check tablero
+let _lastScorebarKey    = null;   // dirty-check scorebar
 
 // ═══════════════════════════════════════════════════════════════
 // 🛠️ UTILIDADES
@@ -226,6 +229,10 @@ function renderLobby(s) {
 // 🎨 RENDER — TABLERO
 // ═══════════════════════════════════════════════════════════════
 function renderBoard(s) {
+  const boardKey = JSON.stringify({ board: s.board, selectorIndex: s.selectorIndex, playerOrder: s.playerOrder });
+  if (boardKey === _lastBoardKey) return;
+  _lastBoardKey = boardKey;
+
   document.getElementById("pregunta-overlay").classList.remove("visible");
   clearIntervals();
 
@@ -269,6 +276,7 @@ function renderBoard(s) {
 // ⚡ RENDER — MODO RELÁMPAGO
 // ═══════════════════════════════════════════════════════════════
 function renderLightning(s) {
+  _lastBoardKey = null; // forzar re-render del tablero al volver del relámpago
   clearIntervals();
   document.getElementById("pregunta-overlay").classList.remove("visible");
   document.getElementById("lightning-overlay").classList.add("visible");
@@ -397,6 +405,7 @@ function renderLightningTimer(openedAt) {
 // 🎨 RENDER — PREGUNTA
 // ═══════════════════════════════════════════════════════════════
 function renderQuestion(s) {
+  _lastBoardKey = null; // forzar re-render del tablero al volver
   document.getElementById("pregunta-overlay").classList.add("visible");
   const q      = s.currentQuestion;
   const phase  = s.questionPhase;
@@ -567,6 +576,13 @@ function renderBuzzerZone(s, phase, buzzer) {
 // ═══════════════════════════════════════════════════════════════
 function updateScorebar(s) {
   if (!s?.players || !s?.playerOrder) return;
+  const scorebarKey = JSON.stringify({
+    scores: Object.fromEntries(s.playerOrder.map(pid => [pid, s.players[pid]?.score || 0])),
+    selectorIndex: s.selectorIndex,
+  });
+  if (scorebarKey === _lastScorebarKey) return;
+  _lastScorebarKey = scorebarKey;
+
   const order      = s.playerOrder;
   const players    = s.players;
   const selectorId = order[s.selectorIndex || 0];
@@ -657,6 +673,24 @@ function launchConfetti() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// 🔄 MIGRACIÓN DE HOST
+// ═══════════════════════════════════════════════════════════════
+function checkHostMigration(s) {
+  if (!s.players || !s.playerOrder || !s.hostId) return;
+  const hostConnected = s.players[s.hostId]?.connected;
+  // Si el host está conectado (o campo no existe aún), resetear el guard
+  if (hostConnected !== false) { _hostMigrating = false; return; }
+  if (_hostMigrating) return;
+
+  // Elegir el primer jugador conectado que no sea el host actual
+  const newHostId = s.playerOrder.find(pid => pid !== s.hostId && s.players[pid]?.connected !== false);
+  if (!newHostId) return;
+
+  _hostMigrating = true;
+  GameDAO.migrateHost(roomCode, s.hostId, newHostId).catch(() => { _hostMigrating = false; });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // 🎯 RENDER PRINCIPAL — listener único
 // ═══════════════════════════════════════════════════════════════
 function render(s) {
@@ -671,6 +705,7 @@ function render(s) {
   }
 
   checkSoundTriggers(s);
+  checkHostMigration(s);
 
   switch (s.status) {
     case "lobby":
@@ -732,6 +767,7 @@ async function handleCreateRoom() {
     sessionStorage.setItem("roomCode", roomCode);
     sessionStorage.setItem("myName",   myName);
     subscribeToRoom(roomCode);
+    GameDAO.setupPresence(roomCode, myPlayerId).catch(() => {});
   } catch (e) {
     setError("Error al crear la sala. Intentá de nuevo.");
     console.error(e);
@@ -762,6 +798,7 @@ async function handleJoinRoom() {
     sessionStorage.setItem("roomCode", roomCode);
     sessionStorage.setItem("myName",   myName);
     subscribeToRoom(roomCode);
+    GameDAO.setupPresence(roomCode, myPlayerId).catch(() => {});
   } catch (e) {
     setError("Error al unirse. Intentá de nuevo.");
     console.error(e);
@@ -777,66 +814,105 @@ async function handleSelectQuestion(category, value) {
 }
 
 async function handleBuzzer() {
-  await GameDAO.pressBuzzer(roomCode, myPlayerId);
+  const btn = document.getElementById("btn-buzzer");
+  btn.disabled = true;
+  try {
+    await GameDAO.pressBuzzer(roomCode, myPlayerId);
+  } catch (e) {
+    console.error("Error al buzzear:", e);
+    btn.disabled = false;
+  }
 }
 
 async function handleRevelar() {
-  await GameDAO.revealAnswer(roomCode);
+  const btn = document.getElementById("btn-revelar");
+  btn.disabled = true;
+  try {
+    await GameDAO.revealAnswer(roomCode);
+  } catch (e) {
+    console.error("Error al revelar:", e);
+    btn.disabled = false;
+  }
 }
 
 async function handleCorrecto() {
   if (!state?.buzzer || !state?.currentQuestion) return;
-  document.getElementById("btn-correcto").disabled   = true;
-  document.getElementById("btn-incorrecto").disabled = true;
+  const btnC = document.getElementById("btn-correcto");
+  const btnI = document.getElementById("btn-incorrecto");
+  btnC.disabled = true; btnI.disabled = true;
   const responderId = state.buzzer.playerId;
-  const pointsDelta = state.currentQuestion.value;
+  const { value, category } = state.currentQuestion;
   triggerFlash("correcto");
-  await GameDAO.judgeAnswer(roomCode, responderId, true, pointsDelta);
+  try {
+    await GameDAO.judgeAnswer(roomCode, responderId, true, value, category, value);
+  } catch (e) {
+    console.error("Error al juzgar correcto:", e);
+    btnC.disabled = false; btnI.disabled = false;
+  }
 }
 
 async function handleIncorrecto() {
   if (!state?.buzzer || !state?.currentQuestion) return;
-  document.getElementById("btn-correcto").disabled   = true;
-  document.getElementById("btn-incorrecto").disabled = true;
+  const btnC = document.getElementById("btn-correcto");
+  const btnI = document.getElementById("btn-incorrecto");
+  btnC.disabled = true; btnI.disabled = true;
   const responderId = state.buzzer.playerId;
-  const pointsDelta = -state.currentQuestion.value;
+  const { value, category } = state.currentQuestion;
   triggerFlash("incorrecto");
-  await GameDAO.judgeAnswer(roomCode, responderId, false, pointsDelta);
+  try {
+    await GameDAO.judgeAnswer(roomCode, responderId, false, -value, category, value);
+  } catch (e) {
+    console.error("Error al juzgar incorrecto:", e);
+    btnC.disabled = false; btnI.disabled = false;
+  }
 }
 
 async function handleSiguiente() {
-  document.getElementById("btn-siguiente").disabled = true;
+  const btn = document.getElementById("btn-siguiente");
+  btn.disabled = true;
   const order      = state.playerOrder || [];
   const nextIndex  = (state.selectorIndex + 1) % order.length;
   const isGameOver = isBoardComplete(state.board, state.categories);
 
-  if (!isGameOver && !state.lightningUsed && !lightningTriggered) {
-    const answered = countAnsweredCells(state.board, state.categories);
-    if (answered >= 15) {
-      lightningTriggered = true;
-      await triggerLightningMode(nextIndex);
-      return;
+  try {
+    if (!isGameOver && !state.lightningUsed && !lightningTriggered) {
+      const answered = countAnsweredCells(state.board, state.categories);
+      if (answered >= 15) {
+        lightningTriggered = true;
+        await triggerLightningMode(nextIndex);
+        return;
+      }
     }
+    await GameDAO.nextTurn(roomCode, nextIndex, isGameOver);
+  } catch (e) {
+    console.error("Error al avanzar turno:", e);
+    btn.disabled = false;
+    lightningTriggered = false;
   }
-  await GameDAO.nextTurn(roomCode, nextIndex, isGameOver);
 }
 
 async function handleSkip() {
-  document.getElementById("btn-skip").disabled = true;
+  const btn = document.getElementById("btn-skip");
+  btn.disabled = true;
   const order     = state.playerOrder || [];
   const nextIndex = (state.selectorIndex + 1) % order.length;
 
-  if (!state.lightningUsed && !lightningTriggered) {
-    // skipQuestion marcará esta celda, así que contamos +1
-    const answered = countAnsweredCells(state.board, state.categories) + 1;
-    if (answered >= 15) {
-      lightningTriggered = true;
-      const skipCell = { category: state.currentQuestion.category, value: state.currentQuestion.value };
-      await triggerLightningMode(nextIndex, skipCell);
-      return;
+  try {
+    if (!state.lightningUsed && !lightningTriggered) {
+      const answered = countAnsweredCells(state.board, state.categories) + 1;
+      if (answered >= 15) {
+        lightningTriggered = true;
+        const skipCell = { category: state.currentQuestion.category, value: state.currentQuestion.value };
+        await triggerLightningMode(nextIndex, skipCell);
+        return;
+      }
     }
+    await GameDAO.skipQuestion(roomCode, nextIndex);
+  } catch (e) {
+    console.error("Error al skipear:", e);
+    btn.disabled = false;
+    lightningTriggered = false;
   }
-  await GameDAO.skipQuestion(roomCode, nextIndex);
 }
 
 async function triggerLightningMode(selectorIndexOnEntry, skipCell = null) {
