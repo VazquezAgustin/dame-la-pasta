@@ -16,17 +16,21 @@ if (firebaseConfigurado) {
 // 🗄️ DAO — Capa de abstracción de datos
 // ═══════════════════════════════════════════════════════════════
 export const GameDAO = {
-  createRoom:     async () => {},
-  roomExists:     async () => false,
-  joinRoom:       async () => {},
-  startGame:      async () => {},
-  selectQuestion: async () => {},
-  pressBuzzer:    async () => false,
-  revealAnswer:   async () => {},
-  judgeAnswer:    async () => {},
-  nextTurn:       async () => {},
-  skipQuestion:   async () => {},
-  subscribe:      () => () => {},
+  createRoom:            async () => {},
+  roomExists:            async () => false,
+  joinRoom:              async () => {},
+  startGame:             async () => {},
+  selectQuestion:        async () => {},
+  pressBuzzer:           async () => false,
+  revealAnswer:          async () => {},
+  judgeAnswer:           async () => {},
+  nextTurn:              async () => {},
+  skipQuestion:          async () => {},
+  startLightningMode:    async () => {},
+  lightningBeginQuestion:async () => {},
+  lightningJudge:        async () => {},
+  lightningAdvance:      async () => {},
+  subscribe:             () => () => {},
 };
 
 // 🔥 IMPLEMENTACIÓN FIREBASE
@@ -125,5 +129,61 @@ if (firebaseConfigurado) {
   GameDAO.subscribe = (roomCode, callback) => {
     const unsub = onValue(rRef(roomCode), (snap) => callback(snap.val()));
     return unsub;
+  };
+
+  // ── Modo Relámpago ────────────────────────────────────────────
+
+  // Activa el modo relámpago. Limpia el estado de pregunta actual,
+  // opcionalmente marca una celda salteada, y guarda lightningMode.
+  GameDAO.startLightningMode = async (roomCode, lightningData, selectorIndexOnEntry, skipCell = null) => {
+    const updates = {
+      currentQuestion: null,
+      buzzer: null,
+      questionPhase: null,
+      questionResult: null,
+      selectorIndex: selectorIndexOnEntry,
+      lightningMode: lightningData,
+      lightningUsed: true,
+    };
+    if (skipCell) {
+      updates[`board/${skipCell.category}/${skipCell.value}`] = true;
+    }
+    await update(rRef(roomCode), updates);
+  };
+
+  // El host inicia la primera pregunta del modo relámpago.
+  GameDAO.lightningBeginQuestion = async (roomCode) => {
+    await update(rRef(roomCode), {
+      "lightningMode/phase": "question",
+      "lightningMode/openedAt": Date.now(),
+      "lightningMode/questionResult": null,
+    });
+  };
+
+  // El host juzga la respuesta de un jugador en modo relámpago.
+  GameDAO.lightningJudge = async (roomCode, playerId, correct, currentScore) => {
+    const updates = {
+      "lightningMode/phase": "judged",
+      "lightningMode/questionResult": { correct, pointsDelta: correct ? 200 : 0 },
+    };
+    if (correct) {
+      updates[`players/${playerId}/score`] = currentScore + 200;
+    }
+    await update(rRef(roomCode), updates);
+  };
+
+  // Avanza al siguiente jugador/ronda, o termina el modo relámpago.
+  GameDAO.lightningAdvance = async (roomCode, nextSlot, totalSlots) => {
+    if (nextSlot >= totalSlots) {
+      // Fin del modo — selectorIndex ya está correcto desde startLightningMode
+      await update(rRef(roomCode), { lightningMode: null });
+    } else {
+      await update(rRef(roomCode), {
+        "lightningMode/currentSlot": nextSlot,
+        "lightningMode/phase": "question",
+        "lightningMode/openedAt": Date.now(),
+        "lightningMode/questionResult": null,
+      });
+    }
   };
 }

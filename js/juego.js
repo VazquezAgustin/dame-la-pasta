@@ -1,5 +1,5 @@
 import { GameDAO, firebaseConfigurado } from "./firebase.js";
-import { CATEGORY_POOL, QUESTIONS, pickRandomCategories } from "./preguntas.js";
+import { CATEGORY_POOL, QUESTIONS, LIGHTNING_QUESTIONS, pickRandomCategories } from "./preguntas.js";
 
 // ═══════════════════════════════════════════════════════════════
 // 🎮 ESTADO GLOBAL
@@ -10,13 +10,14 @@ if (!myPlayerId) {
   sessionStorage.setItem("playerId", myPlayerId);
 }
 
-let myName        = "";
-let roomCode      = "";
-let state         = null;
-let isHost        = false;
-let unsubscribe   = null;
-let timerInterval = null;
-let skipTimeout   = null;
+let myName            = "";
+let roomCode          = "";
+let state             = null;
+let isHost            = false;
+let unsubscribe       = null;
+let timerInterval     = null;
+let skipTimeout       = null;
+let lightningTriggered = false;
 
 // ═══════════════════════════════════════════════════════════════
 // 🛠️ UTILIDADES
@@ -43,6 +44,25 @@ function isBoardComplete(board, categories) {
   return categories.every(cat =>
     [200, 400, 600, 800, 1000].every(v => board[cat]?.[String(v)] === true)
   );
+}
+
+function countAnsweredCells(board, categories) {
+  if (!board || !categories) return 0;
+  let count = 0;
+  categories.forEach(cat =>
+    [200, 400, 600, 800, 1000].forEach(v => {
+      if (board[cat]?.[String(v)] === true) count++;
+    })
+  );
+  return count;
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function getQuestion(category, value) {
@@ -94,6 +114,25 @@ function playCorrect() {
   } catch (_) {}
 }
 
+function playLightning() {
+  try {
+    const ctx = getAudioCtx();
+    // Acorde eléctrico ascendente
+    [220, 330, 440, 660].forEach((freq, i) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.connect(gain); gain.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.07;
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.6, t + 0.35);
+      gain.gain.setValueAtTime(0.07, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+      osc.start(t); osc.stop(t + 0.45);
+    });
+  } catch (_) {}
+}
+
 function playIncorrect() {
   try {
     const ctx  = getAudioCtx();
@@ -110,8 +149,9 @@ function playIncorrect() {
 }
 
 // Seguimiento de estado para no re-disparar sonidos en cada render
-let _lastBuzzerTs    = null;
-let _lastPhase       = null;
+let _lastBuzzerTs       = null;
+let _lastPhase          = null;
+let _lastLightningPhase = null;
 
 function checkSoundTriggers(s) {
   const phase    = s.questionPhase;
@@ -129,6 +169,17 @@ function checkSoundTriggers(s) {
 
   if (!s.currentQuestion) { _lastBuzzerTs = null; _lastPhase = null; }
   else                    { _lastPhase = phase; }
+
+  // Sonidos modo relámpago
+  const lPhase = s.lightningMode?.phase;
+  if (lPhase === "announcing" && _lastLightningPhase !== "announcing") {
+    playLightning();
+  }
+  if (lPhase === "judged" && _lastLightningPhase !== "judged") {
+    if (s.lightningMode?.questionResult?.correct) playCorrect();
+    else                                          playIncorrect();
+  }
+  _lastLightningPhase = lPhase || null;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -212,6 +263,134 @@ function renderBoard(s) {
       tablero.appendChild(cell);
     });
   });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ⚡ RENDER — MODO RELÁMPAGO
+// ═══════════════════════════════════════════════════════════════
+function renderLightning(s) {
+  clearIntervals();
+  document.getElementById("pregunta-overlay").classList.remove("visible");
+  document.getElementById("lightning-overlay").classList.add("visible");
+
+  const lm          = s.lightningMode;
+  const order       = s.playerOrder || [];
+  const playerCount = order.length;
+  const playerIndex = lm.currentSlot % playerCount;
+  const round       = Math.floor(lm.currentSlot / playerCount) + 1;
+  const currentPId  = order[playerIndex];
+  const pName       = esc(s.players?.[currentPId]?.name || "?");
+  const isMyTurnLM  = currentPId === myPlayerId;
+  const qData       = LIGHTNING_QUESTIONS[(lm.questionIndices || [])[lm.currentSlot]] || { question: "...", answer: "..." };
+
+  const contentEl = document.getElementById("lightning-content");
+  const actionsEl = document.getElementById("lightning-actions");
+
+  if (lm.phase === "announcing") {
+    contentEl.innerHTML = `
+      <div class="lightning-announcing">
+        <div class="lightning-big-title">⚡<br>MODO<br>RELÁMPAGO</div>
+        <p class="lightning-desc">
+          Cada jugador responde <strong>2 preguntas</strong>.<br>
+          <strong>10 segundos</strong> por pregunta.<br>
+          Correcto: <strong>+200 pts</strong> · Incorrecto: sin penalización
+        </p>
+      </div>`;
+    actionsEl.innerHTML = isHost
+      ? `<button class="btn btn-primario" id="btn-lightning-comenzar" style="width:min(340px,92vw)">⚡ ¡Empezar!</button>`
+      : `<p style="color:var(--texto-secundario);text-align:center">Esperando que el host inicie el modo...</p>`;
+    if (isHost) {
+      document.getElementById("btn-lightning-comenzar")
+        .addEventListener("click", handleLightningComenzar);
+    }
+
+  } else if (lm.phase === "question") {
+    contentEl.innerHTML = `
+      <div class="lightning-player-turn ${isMyTurnLM ? "mi-turno" : ""}">
+        ${isMyTurnLM ? "¡Es tu turno!" : pName}
+      </div>
+      <div class="lightning-round-badge">Ronda ${round}/2 · Pregunta ${lm.currentSlot + 1}/${lm.totalSlots}</div>
+      <div class="lightning-timer-row">
+        <div class="lightning-timer-circle" id="lightning-timer-circle">
+          <span class="lightning-timer-num" id="lightning-timer-num">10</span>
+        </div>
+        <div class="lightning-timer-bar-wrap">
+          <div class="lightning-timer-bar" id="lightning-timer-bar"></div>
+        </div>
+      </div>
+      <div class="lightning-question-text">${esc(qData.question)}</div>`;
+    actionsEl.innerHTML = isHost
+      ? `<div class="acciones-host-row" style="width:min(400px,92vw)">
+           <button class="btn btn-correcto" id="btn-lightning-correcto">✓ Correcto (+200)</button>
+           <button class="btn btn-incorrecto" id="btn-lightning-incorrecto">✗ Incorrecto</button>
+         </div>`
+      : `<p style="color:var(--texto-secundario);text-align:center">
+           ${isMyTurnLM ? "¡Decí tu respuesta en voz alta!" : "Esperando que el host decida..."}
+         </p>`;
+    if (isHost) {
+      document.getElementById("btn-lightning-correcto")
+        .addEventListener("click", () => handleLightningJudge(true));
+      document.getElementById("btn-lightning-incorrecto")
+        .addEventListener("click", () => handleLightningJudge(false));
+    }
+    renderLightningTimer(lm.openedAt);
+
+  } else if (lm.phase === "judged") {
+    const result = lm.questionResult;
+    const pts    = result?.correct ? "+200 pts" : "Sin penalización";
+    const color  = result?.correct ? "var(--correcto)" : "var(--texto-secundario)";
+    contentEl.innerHTML = `
+      <div class="lightning-player-turn ${isMyTurnLM ? "mi-turno" : ""}">${pName}</div>
+      <div class="lightning-round-badge">Ronda ${round}/2 · Pregunta ${lm.currentSlot + 1}/${lm.totalSlots}</div>
+      <div class="lightning-question-text">${esc(qData.question)}</div>
+      <div class="respuesta-box visible">
+        <div class="respuesta-label">Respuesta correcta</div>
+        <div class="respuesta-texto">${esc(qData.answer)}</div>
+      </div>
+      <div class="resultado-panel visible">
+        <div class="resultado-icono">${result?.correct ? "✅" : "❌"}</div>
+        <div class="resultado-texto">${result?.correct ? `¡${pName} acertó!` : `${pName} no acertó`}</div>
+        <div class="resultado-puntos" style="color:${color}">${pts}</div>
+      </div>`;
+    actionsEl.innerHTML = isHost
+      ? `<button class="btn btn-primario" id="btn-lightning-siguiente" style="width:min(340px,92vw)">Siguiente ▶</button>`
+      : `<p style="color:var(--texto-secundario);text-align:center">Esperando al host...</p>`;
+    if (isHost) {
+      document.getElementById("btn-lightning-siguiente")
+        .addEventListener("click", handleLightningSiguiente);
+    }
+  }
+}
+
+function renderLightningTimer(openedAt) {
+  const TIMEOUT = 10000;
+  const tick = () => {
+    const circleEl = document.getElementById("lightning-timer-circle");
+    const numEl    = document.getElementById("lightning-timer-num");
+    const barEl    = document.getElementById("lightning-timer-bar");
+    if (!circleEl || !numEl || !barEl) { clearIntervals(); return; }
+
+    const elapsed   = Date.now() - openedAt;
+    const remaining = Math.max(0, TIMEOUT - elapsed);
+    const pct       = (remaining / TIMEOUT) * 100;
+    const secs      = Math.ceil(remaining / 1000);
+
+    const color = secs <= 3 ? "var(--incorrecto)" : secs <= 5 ? "var(--acento)" : "var(--acento)";
+    circleEl.style.setProperty("--timer-pct", pct + "%");
+    if (secs <= 3) {
+      circleEl.style.background = `conic-gradient(var(--incorrecto) ${pct}%, rgba(255,255,255,0.08) 0)`;
+    } else {
+      circleEl.style.background = `conic-gradient(var(--acento) ${pct}%, rgba(255,255,255,0.08) 0)`;
+    }
+    numEl.textContent  = secs > 0 ? secs : "0";
+    numEl.style.color  = color;
+    barEl.style.width  = pct + "%";
+    barEl.style.background = secs <= 3 ? "var(--incorrecto)" : "var(--acento)";
+
+    if (remaining <= 0) clearIntervals();
+  };
+  tick();
+  timerInterval = setInterval(tick, 250);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -502,8 +681,13 @@ function render(s) {
     case "playing":
       showScreen("screen-game");
       updateScorebar(s);
-      if (!s.currentQuestion) renderBoard(s);
-      else                    renderQuestion(s);
+      if (s.lightningMode?.active) {
+        renderLightning(s);
+      } else {
+        document.getElementById("lightning-overlay").classList.remove("visible");
+        if (!s.currentQuestion) renderBoard(s);
+        else                    renderQuestion(s);
+      }
       break;
     case "finished":
       showScreen("screen-finished");
@@ -625,6 +809,15 @@ async function handleSiguiente() {
   const order      = state.playerOrder || [];
   const nextIndex  = (state.selectorIndex + 1) % order.length;
   const isGameOver = isBoardComplete(state.board, state.categories);
+
+  if (!isGameOver && !state.lightningUsed && !lightningTriggered) {
+    const answered = countAnsweredCells(state.board, state.categories);
+    if (answered >= 15) {
+      lightningTriggered = true;
+      await triggerLightningMode(nextIndex);
+      return;
+    }
+  }
   await GameDAO.nextTurn(roomCode, nextIndex, isGameOver);
 }
 
@@ -632,11 +825,75 @@ async function handleSkip() {
   document.getElementById("btn-skip").disabled = true;
   const order     = state.playerOrder || [];
   const nextIndex = (state.selectorIndex + 1) % order.length;
+
+  if (!state.lightningUsed && !lightningTriggered) {
+    // skipQuestion marcará esta celda, así que contamos +1
+    const answered = countAnsweredCells(state.board, state.categories) + 1;
+    if (answered >= 15) {
+      lightningTriggered = true;
+      const skipCell = { category: state.currentQuestion.category, value: state.currentQuestion.value };
+      await triggerLightningMode(nextIndex, skipCell);
+      return;
+    }
+  }
   await GameDAO.skipQuestion(roomCode, nextIndex);
+}
+
+async function triggerLightningMode(selectorIndexOnEntry, skipCell = null) {
+  const order       = state.playerOrder || [];
+  const playerCount = order.length;
+  const totalSlots  = playerCount * 2;
+
+  // Elegir índices al azar del pool de preguntas relámpago
+  const indices  = LIGHTNING_QUESTIONS.map((_, i) => i);
+  const shuffled = [...indices].sort(() => Math.random() - 0.5);
+  const questionIndices = shuffled.slice(0, totalSlots);
+
+  await GameDAO.startLightningMode(roomCode, {
+    active: true,
+    currentSlot: 0,
+    totalSlots,
+    phase: "announcing",
+    questionIndices,
+    questionResult: null,
+    openedAt: null,
+  }, selectorIndexOnEntry, skipCell);
+}
+
+async function handleLightningComenzar() {
+  document.getElementById("btn-lightning-comenzar").disabled = true;
+  await GameDAO.lightningBeginQuestion(roomCode);
+}
+
+async function handleLightningJudge(correct) {
+  const lm          = state.lightningMode;
+  const order       = state.playerOrder || [];
+  const playerIndex = lm.currentSlot % order.length;
+  const currentPId  = order[playerIndex];
+  const currentScore = state.players?.[currentPId]?.score || 0;
+
+  const btnC = document.getElementById("btn-lightning-correcto");
+  const btnI = document.getElementById("btn-lightning-incorrecto");
+  if (btnC) btnC.disabled = true;
+  if (btnI) btnI.disabled = true;
+
+  if (correct) triggerFlash("correcto");
+  else         triggerFlash("incorrecto");
+
+  await GameDAO.lightningJudge(roomCode, currentPId, correct, currentScore);
+}
+
+async function handleLightningSiguiente() {
+  const btn = document.getElementById("btn-lightning-siguiente");
+  if (btn) btn.disabled = true;
+  const lm      = state.lightningMode;
+  const nextSlot = lm.currentSlot + 1;
+  await GameDAO.lightningAdvance(roomCode, nextSlot, lm.totalSlots);
 }
 
 async function handleJugarNuevo() {
   if (!isHost) return;
+  lightningTriggered = false;
   const prevUsed = state.usedCategories || [];
   const alreadyUsed = [...new Set([...prevUsed, ...(state.categories || [])])];
   const categories = pickRandomCategories(CATEGORY_POOL, 6, alreadyUsed);

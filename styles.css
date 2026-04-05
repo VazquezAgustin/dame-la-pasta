@@ -640,6 +640,163 @@ input[type="text"]:focus { border-color: var(--primario-glow); }
   to { transform: translateY(110vh) rotate(720deg); opacity: 0; }
 }
 
+/* ═══ MODO RELÁMPAGO ═══════════════════════════════════════════ */
+.lightning-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--fondo);
+  z-index: 55;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 20px 70px;
+  overflow-y: auto;
+  gap: 0;
+}
+.lightning-overlay.visible { display: flex; }
+
+.lightning-header-badge {
+  font-family: 'Bebas Neue', cursive;
+  font-size: clamp(1.6rem, 6vw, 2.4rem);
+  color: var(--acento);
+  letter-spacing: 0.15em;
+  text-shadow: 0 0 24px rgba(245,158,11,0.7), 0 0 48px rgba(245,158,11,0.35);
+  text-align: center;
+  padding: 8px 0 16px;
+  animation: pulse-lightning 2s infinite;
+  flex-shrink: 0;
+}
+
+.lightning-content {
+  flex: 1;
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.lightning-actions {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  flex-shrink: 0;
+}
+
+/* Fase announcing */
+.lightning-announcing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  text-align: center;
+  padding: 20px 0;
+}
+.lightning-big-title {
+  font-family: 'Bebas Neue', cursive;
+  font-size: clamp(3rem, 14vw, 6rem);
+  color: var(--acento);
+  line-height: 1;
+  text-shadow: 0 0 40px rgba(245,158,11,0.6);
+}
+.lightning-desc {
+  font-size: 1rem;
+  color: var(--texto-secundario);
+  line-height: 1.7;
+  max-width: 320px;
+}
+.lightning-desc strong { color: var(--texto); }
+
+/* Fase pregunta */
+.lightning-player-turn {
+  font-family: 'Bebas Neue', cursive;
+  font-size: clamp(1.8rem, 7vw, 2.8rem);
+  text-align: center;
+  color: var(--texto);
+  line-height: 1.1;
+}
+.lightning-player-turn.mi-turno { color: var(--acento); }
+
+.lightning-round-badge {
+  font-size: 0.75rem;
+  color: var(--texto-secundario);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-align: center;
+}
+
+.lightning-timer-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 340px;
+}
+
+.lightning-timer-circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: conic-gradient(var(--acento) var(--timer-pct, 100%), rgba(255,255,255,0.08) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  transition: background 0.25s;
+}
+.lightning-timer-circle::after {
+  content: '';
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--fondo);
+}
+.lightning-timer-num {
+  position: relative;
+  z-index: 1;
+  font-family: 'Bebas Neue', cursive;
+  font-size: 1.9rem;
+  color: var(--acento);
+  line-height: 1;
+  transition: color 0.3s;
+}
+
+.lightning-timer-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.lightning-timer-bar {
+  height: 100%;
+  background: var(--acento);
+  border-radius: 3px;
+  width: 100%;
+  transition: width 0.25s linear, background 0.3s;
+}
+
+.lightning-question-text {
+  font-size: clamp(1.15rem, 4vw, 1.7rem);
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.45;
+  padding: 4px;
+  width: 100%;
+}
+
+@keyframes pulse-lightning {
+  0%, 100% { text-shadow: 0 0 24px rgba(245,158,11,0.7), 0 0 48px rgba(245,158,11,0.35); }
+  50%       { text-shadow: 0 0 36px rgba(245,158,11,1),   0 0 72px rgba(245,158,11,0.6); }
+}
+
 /* Banner error Firebase */
 #banner-error {
   position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
