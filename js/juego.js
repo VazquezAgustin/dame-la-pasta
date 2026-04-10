@@ -21,6 +21,9 @@ let lightningTriggered   = false;
 let estimacionTriggered  = false;
 let _hostMigrating       = false;  // guard para no lanzar migración múltiple
 let _lastBoardKey       = null;   // dirty-check tablero
+let _lastLightningKey   = null;   // dirty-check modo relámpago
+let _lastEstimacionKey  = null;   // dirty-check modo estimación
+let _estimacionInput    = "";     // valor del input de estimación pendiente de envío
 let _lastScorebarKey    = null;   // dirty-check scorebar
 
 // ═══════════════════════════════════════════════════════════════
@@ -305,12 +308,15 @@ function renderBoard(s) {
 // ⚡ RENDER — MODO RELÁMPAGO
 // ═══════════════════════════════════════════════════════════════
 function renderLightning(s) {
-  _lastBoardKey = null; // forzar re-render del tablero al volver del relámpago
+  const lm = s.lightningMode;
+  const lightningKey = JSON.stringify({ phase: lm.phase, slot: lm.currentSlot, result: lm.questionResult });
+  if (lightningKey === _lastLightningKey) return;
+  _lastLightningKey = lightningKey;
+  _lastBoardKey = null;
+  _lastEstimacionKey = null;
   clearIntervals();
   document.getElementById("pregunta-overlay").classList.remove("visible");
   document.getElementById("lightning-overlay").classList.add("visible");
-
-  const lm          = s.lightningMode;
   const order       = s.playerOrder || [];
   const playerCount = order.length;
   const playerIndex = lm.currentSlot % playerCount;
@@ -361,8 +367,9 @@ function renderLightning(s) {
           <div class="respuesta-label">Respuesta correcta</div>
           <div class="respuesta-texto">${esc(qData.answer)}</div>
         </div>` : ""}`;
-    actionsEl.innerHTML = isHost && !isMyTurnLM
-      ? `<div class="acciones-host-row" style="width:min(400px,92vw)">
+    actionsEl.innerHTML = isHost
+      ? `${isMyTurnLM ? `<p style="color:var(--texto-secundario);text-align:center;margin-bottom:8px">¡Decí tu respuesta en voz alta!</p>` : ""}
+         <div class="acciones-host-row" style="width:min(400px,92vw)">
            <button class="btn btn-correcto" id="btn-lightning-correcto">✓ Correcto (+200)</button>
            <button class="btn btn-incorrecto" id="btn-lightning-incorrecto">✗ Incorrecto</button>
          </div>`
@@ -439,12 +446,15 @@ function renderLightningTimer(openedAt) {
 // 🎯 RENDER — MODO ESTIMACIÓN
 // ═══════════════════════════════════════════════════════════════
 function renderEstimacion(s) {
-  _lastBoardKey = null; // forzar re-render del tablero al volver
+  const em = s.estimacionMode;
+  const estimacionKey = JSON.stringify({ phase: em.phase, slot: em.currentSlot, responses: Object.keys(em.responses || {}).length, winnerId: em.winnerId });
+  if (estimacionKey === _lastEstimacionKey) return;
+  _lastEstimacionKey = estimacionKey;
+  _lastBoardKey = null;
+  _lastLightningKey = null;
   clearIntervals();
   document.getElementById("pregunta-overlay").classList.remove("visible");
   document.getElementById("estimacion-overlay").classList.add("visible");
-
-  const em          = s.estimacionMode;
   const slot        = em.currentSlot || 0;
   const qIdx        = (em.questionIndices || [])[slot] ?? em.questionIndex ?? 0;
   const qData       = ESTIMATION_QUESTIONS[qIdx] || { question: "...", answer: 0 };
@@ -515,7 +525,9 @@ function renderEstimacion(s) {
         </div>`;
       const inputEl = document.getElementById("estimacion-input");
       const btnEnviar = document.getElementById("btn-estimacion-enviar");
+      if (_estimacionInput) inputEl.value = _estimacionInput;
       inputEl.focus();
+      inputEl.addEventListener("input", e => { _estimacionInput = e.target.value; });
       inputEl.addEventListener("keydown", e => { if (e.key === "Enter") handleEstimacionSubmit(); });
       btnEnviar.addEventListener("click", handleEstimacionSubmit);
     }
@@ -596,7 +608,9 @@ function renderEstimacionTimer(openedAt) {
 // 🎨 RENDER — PREGUNTA
 // ═══════════════════════════════════════════════════════════════
 function renderQuestion(s) {
-  _lastBoardKey = null; // forzar re-render del tablero al volver
+  _lastBoardKey = null;
+  _lastLightningKey = null;
+  _lastEstimacionKey = null;
   document.getElementById("pregunta-overlay").classList.add("visible");
   const q      = s.currentQuestion;
   const phase  = s.questionPhase;
@@ -1074,14 +1088,14 @@ async function handleSiguiente() {
   try {
     const answered = countAnsweredCells(state.board, state.categories);
     if (!isGameOver && !state.estimacionUsed && !estimacionTriggered) {
-      if (answered >= 10) {
+      if (answered >= 2) {
         estimacionTriggered = true;
         await triggerEstimacionMode(nextIndex);
         return;
       }
     }
     if (!isGameOver && !state.lightningUsed && !lightningTriggered) {
-      if (answered >= 15) {
+      if (answered >= 4) {
         lightningTriggered = true;
         await triggerLightningMode(nextIndex);
         return;
@@ -1106,14 +1120,14 @@ async function handleSkip() {
     const answered = countAnsweredCells(state.board, state.categories) + 1; // +1 por la celda skipeada
     const skipCell = { category: state.currentQuestion.category, value: state.currentQuestion.value };
     if (!state.estimacionUsed && !estimacionTriggered) {
-      if (answered >= 10) {
+      if (answered >= 2) {
         estimacionTriggered = true;
         await triggerEstimacionMode(nextIndex, skipCell);
         return;
       }
     }
     if (!state.lightningUsed && !lightningTriggered) {
-      if (answered >= 15) {
+      if (answered >= 4) {
         lightningTriggered = true;
         await triggerLightningMode(nextIndex, skipCell);
         return;
@@ -1196,6 +1210,7 @@ async function handleEstimacionSubmit() {
   const val = parseInt(inputEl.value, 10);
   if (isNaN(val)) { inputEl.focus(); return; }
   if (btnEnviar) btnEnviar.disabled = true;
+  _estimacionInput = "";
   try {
     await GameDAO.submitEstimacion(roomCode, myPlayerId, val);
   } catch (e) {
@@ -1240,7 +1255,8 @@ async function handleEstimacionSiguiente() {
   const em       = state.estimacionMode;
   const nextSlot = (em.currentSlot || 0) + 1;
   try {
-    if (nextSlot >= (em.totalSlots || 1)) {
+    _estimacionInput = "";
+  if (nextSlot >= (em.totalSlots || 1)) {
       const isGameOver = isBoardComplete(state.board, state.categories);
       await GameDAO.endEstimacionMode(roomCode, em.nextSelectorIndex, isGameOver);
     } else {
