@@ -1088,14 +1088,14 @@ async function handleSiguiente() {
   try {
     const answered = countAnsweredCells(state.board, state.categories);
     if (!isGameOver && !state.estimacionUsed && !estimacionTriggered) {
-      if (answered >= 2) {
+      if (answered >= 10) {
         estimacionTriggered = true;
         await triggerEstimacionMode(nextIndex);
         return;
       }
     }
     if (!isGameOver && !state.lightningUsed && !lightningTriggered) {
-      if (answered >= 4) {
+      if (answered >= 15) {
         lightningTriggered = true;
         await triggerLightningMode(nextIndex);
         return;
@@ -1120,14 +1120,14 @@ async function handleSkip() {
     const answered = countAnsweredCells(state.board, state.categories) + 1; // +1 por la celda skipeada
     const skipCell = { category: state.currentQuestion.category, value: state.currentQuestion.value };
     if (!state.estimacionUsed && !estimacionTriggered) {
-      if (answered >= 2) {
+      if (answered >= 10) {
         estimacionTriggered = true;
         await triggerEstimacionMode(nextIndex, skipCell);
         return;
       }
     }
     if (!state.lightningUsed && !lightningTriggered) {
-      if (answered >= 4) {
+      if (answered >= 15) {
         lightningTriggered = true;
         await triggerLightningMode(nextIndex, skipCell);
         return;
