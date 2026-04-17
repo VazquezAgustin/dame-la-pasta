@@ -220,9 +220,11 @@ function checkSoundTriggers(s) {
 function generateQR(code) {
   const container = document.getElementById("qr-container");
   if (container.hasChildNodes()) return;
-  const url = `${location.origin}${location.pathname}?room=${code}`;
-  // eslint-disable-next-line no-undef
-  new QRCode(container, { text: url, width: 140, height: 140, colorDark: "#f8fafc", colorLight: "#1e1b4b" });
+  if (typeof QRCode === "undefined") return;
+  try {
+    const url = `${location.origin}${location.pathname}?room=${code}`;
+    new QRCode(container, { text: url, width: 140, height: 140, colorDark: "#f8fafc", colorLight: "#1e1b4b" }); // eslint-disable-line no-undef
+  } catch (_) {}
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1037,7 +1039,7 @@ async function handleCreateRoom() {
     });
     sessionStorage.setItem("roomCode", roomCode);
     sessionStorage.setItem("myName",   myName);
-    window.history.replaceState(null, "", `?room=${roomCode}`);
+    try { window.history.replaceState(null, "", `?room=${roomCode}`); } catch (_) {}
     subscribeToRoom(roomCode);
     GameDAO.setupPresence(roomCode, myPlayerId).catch(() => {});
   } catch (e) {
@@ -1080,7 +1082,7 @@ async function handleJoinRoom() {
     await GameDAO.joinRoom(roomCode, myPlayerId, { name, score: 0, connected: true });
     sessionStorage.setItem("roomCode", roomCode);
     sessionStorage.setItem("myName",   myName);
-    window.history.replaceState(null, "", `?room=${roomCode}`);
+    try { window.history.replaceState(null, "", `?room=${roomCode}`); } catch (_) {}
     subscribeToRoom(roomCode);
     GameDAO.setupPresence(roomCode, myPlayerId).catch(() => {});
   } catch (e) {
