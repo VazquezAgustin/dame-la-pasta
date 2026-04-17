@@ -203,6 +203,17 @@ input[type="text"]:focus { border-color: var(--primario-glow); }
   transition: background 0.2s;
 }
 .btn-copiar:hover { background: rgba(245,158,11,0.22); }
+.lobby-share-btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+
+.qr-container {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+}
+.qr-container canvas, .qr-container img {
+  border-radius: 8px;
+  border: 2px solid rgba(245,158,11,0.35);
+}
 
 .jugadores-lista {
   width: 100%;

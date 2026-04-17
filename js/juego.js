@@ -217,6 +217,14 @@ function checkSoundTriggers(s) {
   _lastEstimacionPhase = ePhase || null;
 }
 
+function generateQR(code) {
+  const container = document.getElementById("qr-container");
+  if (container.hasChildNodes()) return;
+  const url = `${location.origin}${location.pathname}?room=${code}`;
+  // eslint-disable-next-line no-undef
+  new QRCode(container, { text: url, width: 140, height: 140, colorDark: "#f8fafc", colorLight: "#1e1b4b" });
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 🎨 RENDER — LOBBY
 // ═══════════════════════════════════════════════════════════════
@@ -244,6 +252,8 @@ function renderLobby(s) {
     `;
     lista.appendChild(div);
   });
+
+  generateQR(roomCode);
 
   const btnEmpezar   = document.getElementById("btn-empezar");
   const msgEsperando = document.getElementById("msg-esperando");
@@ -986,6 +996,7 @@ async function handleCreateRoom() {
     });
     sessionStorage.setItem("roomCode", roomCode);
     sessionStorage.setItem("myName",   myName);
+    window.history.replaceState(null, "", `?room=${roomCode}`);
     subscribeToRoom(roomCode);
     GameDAO.setupPresence(roomCode, myPlayerId).catch(() => {});
   } catch (e) {
@@ -1017,6 +1028,7 @@ async function handleJoinRoom() {
     await GameDAO.joinRoom(roomCode, myPlayerId, { name, score: 0, connected: true });
     sessionStorage.setItem("roomCode", roomCode);
     sessionStorage.setItem("myName",   myName);
+    window.history.replaceState(null, "", `?room=${roomCode}`);
     subscribeToRoom(roomCode);
     GameDAO.setupPresence(roomCode, myPlayerId).catch(() => {});
   } catch (e) {
@@ -1414,6 +1426,15 @@ document.getElementById("btn-copiar-codigo").addEventListener("click", () => {
     setTimeout(() => btn.textContent = prev, 2000);
   });
 });
+document.getElementById("btn-copiar-link").addEventListener("click", () => {
+  const url = `${location.origin}${location.pathname}?room=${roomCode}`;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById("btn-copiar-link");
+    const prev = btn.textContent;
+    btn.textContent = "✅ Copiado";
+    setTimeout(() => btn.textContent = prev, 2000);
+  });
+});
 
 // Pregunta / buzzer
 document.getElementById("btn-buzzer").addEventListener("click", handleBuzzer);
@@ -1438,8 +1459,15 @@ if (firebaseConfigurado) {
   if (savedRoom) {
     roomCode = savedRoom;
     if (savedName) myName = savedName;
-    // Si myName está vacío, render() lo recupera de state.players al llegar el snapshot
     subscribeToRoom(roomCode);
+  } else {
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromUrl = (urlParams.get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (roomFromUrl.length === 6) {
+      document.querySelector('[data-tab="unirse"]').click();
+      document.getElementById("input-codigo").value = roomFromUrl;
+      document.getElementById("input-nombre-unirse").focus();
+    }
   }
 }
 
